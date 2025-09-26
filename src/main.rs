@@ -75,6 +75,8 @@ async fn main() {
                 );
                 headers
             })
+            .max_request_size(u32::MAX)
+            .max_response_size(u32::MAX)
             .build(env.rpc_url)
             .unwrap(),
     );
