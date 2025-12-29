@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, str::FromStr};
 
 use alloy_primitives::{Address, Bytes, FixedBytes};
 use alloy_sol_macro::sol;
@@ -50,9 +50,38 @@ pub struct BalanceTracker {
     client: HttpClient,
 }
 
+pub struct TickerInfo {
+    pub ticker: String,
+}
+
 impl BalanceTracker {
     pub fn new(database: BalanceDatabase, client: HttpClient) -> Self {
         BalanceTracker { database, client }
+    }
+
+    pub async fn get_ticker_info_by_address(
+        &self,
+        address: String,
+    ) -> Option<TickerInfo> {
+        let call = EthCall {
+            from: Some(Address::ZERO.into()),
+            to: Some(Address::from_str(&address).unwrap().into()),
+            data: Some(RawBytes::new(format!(
+                "0x{}",
+                hex::encode(nameCall::new(()).abi_encode())
+            ))),
+        };
+        let name_data = self.client.eth_call(call, None).await.ok()?;
+        let ticker_name = nameCall::abi_decode_returns(
+            hex::decode(name_data.trim_start_matches("0x"))
+                .ok()?
+                .as_slice(),
+        )
+        .ok()?;
+
+        Some(TickerInfo {
+            ticker: ticker_name,
+        })
     }
 
     pub async fn run(&self) {
@@ -142,21 +171,33 @@ impl BalanceTracker {
                         self.database
                             .add_ticker(
                                 ticker_name,
-                                log.topics[1].bytes.to_string(),
+                                Some(log.topics[1].bytes.to_string()),
                                 address_from_topic(log.topics[2].bytes)
                                     .to_string()
                                     .to_lowercase(),
+                                true,
                             )
                             .await;
                         continue;
                     }
                 } else {
                     if log.topics[0].bytes == Transfer::SIGNATURE_HASH {
-                        let Some(ticker_name) =
-                            self.database.get_ticker_by_address(address_string).await
-                        else {
-                            continue;
+                        let (ticker_name, is_brc20) = match self.database.get_ticker_by_address(address_string.clone()).await {
+                            Some((ticker_name, is_brc20)) => (ticker_name, is_brc20),
+                            None => match self.get_ticker_info_by_address(address_string.clone()).await {
+                                Some(ticker_info) => {
+                                    self.database
+                                        .add_ticker(ticker_info.ticker.clone(), None, address_string.clone(), false)
+                                        .await;
+                                    (ticker_info.ticker, false)
+                                }
+                                None => {
+                                    println!("Unknown contract address: {}, skipping log", address_string);
+                                    continue;
+                                }
+                            },
                         };
+
                         let from_address = address_from_topic(log.topics[1].bytes)
                             .to_string()
                             .to_lowercase();
@@ -171,10 +212,10 @@ impl BalanceTracker {
 
                         if from_address == "0x0000000000000000000000000000000000000000" {
                             // Handle transfer from zero address (minting)
-                            println!("Mint of {} ${} to {}", amount, ticker_name, to_address);
+                            println!("Mint of {} ${}, is brc20: {} to {}", amount, ticker_name, is_brc20, to_address);
                             let balance = self
                                 .database
-                                .get_balance(to_address.clone(), ticker_name.clone())
+                                .get_balance_of_contract(to_address.clone(), address_string.clone())
                                 .await
                                 .unwrap_or(0);
                             self.database
@@ -182,7 +223,9 @@ impl BalanceTracker {
                                     next_block,
                                     to_address,
                                     ticker_name,
+                                    address_string,
                                     balance.checked_add(amount).expect("Overflow"),
+                                    is_brc20,
                                 )
                                 .await;
                         } else if to_address == "0x0000000000000000000000000000000000000000" {
@@ -190,7 +233,7 @@ impl BalanceTracker {
                             println!("Burn of {} ${} from {}", amount, ticker_name, from_address);
                             let balance = self
                                 .database
-                                .get_balance(from_address.clone(), ticker_name.clone())
+                                .get_balance_of_contract(from_address.clone(), address_string.clone())
                                 .await
                                 .unwrap_or(0);
                             self.database
@@ -198,7 +241,9 @@ impl BalanceTracker {
                                     next_block,
                                     from_address,
                                     ticker_name,
+                                    address_string,
                                     balance.checked_sub(amount).expect("Insufficient balance"),
+                                    is_brc20,
                                 )
                                 .await;
                         } else {
@@ -211,13 +256,13 @@ impl BalanceTracker {
 
                             let from_balance = self
                                 .database
-                                .get_balance(from_address.clone(), ticker_name.clone())
+                                .get_balance_of_contract(from_address.clone(), address_string.clone())
                                 .await
                                 .unwrap_or(0);
 
                             let to_balance = self
                                 .database
-                                .get_balance(to_address.clone(), ticker_name.clone())
+                                .get_balance_of_contract(to_address.clone(), address_string.clone())
                                 .await
                                 .unwrap_or(0);
 
@@ -229,9 +274,11 @@ impl BalanceTracker {
                                     next_block,
                                     from_address,
                                     ticker_name.clone(),
+                                    address_string.clone(),
                                     from_balance
                                         .checked_sub(amount)
                                         .expect("Insufficient balance"),
+                                    is_brc20,
                                 )
                                 .await;
 
@@ -240,7 +287,9 @@ impl BalanceTracker {
                                     next_block,
                                     to_address,
                                     ticker_name.clone(),
+                                    address_string.clone(),
                                     to_balance.checked_add(amount).expect("Overflow"),
+                                    is_brc20,
                                 )
                                 .await;
                         }

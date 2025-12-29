@@ -47,12 +47,12 @@ impl BalanceDatabase {
         sqlx::query(&reset_query).execute(&self.db).await.unwrap();
     }
 
-    pub async fn get_balance(&self, wallet: String, ticker: String) -> Option<u128> {
+    pub async fn get_balance_of_contract(&self, wallet: String, contract_address: String) -> Option<u128> {
         let row = sqlx::query(
-            "SELECT amount FROM brc20_prog_current_balances WHERE wallet = ? AND ticker = ?",
+            "SELECT amount FROM brc20_prog_current_balances WHERE wallet = ? AND contract_address = ?",
         )
         .bind(wallet)
-        .bind(ticker)
+        .bind(contract_address)
         .fetch_optional(&self.db)
         .await
         .unwrap();
@@ -64,45 +64,52 @@ impl BalanceDatabase {
         block_height: u64,
         wallet: String,
         ticker: String,
+        contract_address: String,
         amount: u128,
+        is_brc20: bool,
     ) {
         let mut tx = self.db.begin().await.unwrap();
-        sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height) VALUES (?, ?, ?, ?) ON CONFLICT (wallet, ticker) DO UPDATE SET amount = excluded.amount, block_height = excluded.block_height")
+        sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = excluded.amount, block_height = excluded.block_height")
             .bind(wallet.clone())
             .bind(ticker.clone())
             .bind(amount.to_string())
             .bind(block_height as i64)
+            .bind(contract_address.clone())
+            .bind(is_brc20)
             .execute(&mut *tx)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO brc20_prog_historical_balances (block_height, wallet, ticker, amount) VALUES (?, ?, ?, ?)")
+        sqlx::query("INSERT INTO brc20_prog_historical_balances (block_height, wallet, ticker, amount, contract_address, is_brc20) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (wallet, contract_address, block_height) DO UPDATE SET amount = excluded.amount")
             .bind(block_height as i64)
             .bind(wallet)
             .bind(ticker)
             .bind(amount.to_string())
+            .bind(contract_address)
+            .bind(is_brc20)
             .execute(&mut *tx)
             .await
             .unwrap();
         tx.commit().await.unwrap();
     }
 
-    pub async fn add_ticker(&self, ticker: String, ticker_hash: String, contract_address: String) {
-        sqlx::query("INSERT INTO brc20_prog_tickers (ticker, ticker_hash, contract_address) VALUES (?, ?, ?)")
+    pub async fn add_ticker(&self, ticker: String, ticker_hash: Option<String>, contract_address: String, is_brc20: bool) {
+        sqlx::query("INSERT INTO brc20_prog_tickers (ticker, ticker_hash, contract_address, is_brc20) VALUES (?, ?, ?, ?)")
             .bind(ticker)
             .bind(ticker_hash)
             .bind(contract_address)
+            .bind(is_brc20)
             .execute(&self.db)
             .await
             .unwrap();
     }
 
-    pub async fn get_ticker_by_address(&self, contract_address: String) -> Option<String> {
-        let row = sqlx::query("SELECT ticker FROM brc20_prog_tickers WHERE contract_address = ?")
+    pub async fn get_ticker_by_address(&self, contract_address: String) -> Option<(String, bool)> {
+        let row = sqlx::query("SELECT ticker, is_brc20 FROM brc20_prog_tickers WHERE contract_address = ?")
             .bind(contract_address)
             .fetch_optional(&self.db)
             .await
             .unwrap();
-        row.map(|r| r.get::<String, _>("ticker"))
+        row.map(|r| (r.get::<String, _>("ticker"), r.get::<bool, _>("is_brc20")))
     }
 
     pub async fn get_last_block(&self) -> u64 {
@@ -190,7 +197,7 @@ impl BalanceDatabase {
             .unwrap();
 
         let deleted_rows = sqlx::query(
-            "DELETE from brc20_prog_current_balances WHERE block_height > ? RETURNING wallet, ticker",
+            "DELETE from brc20_prog_current_balances WHERE block_height > ? RETURNING wallet, contract_address",
         )
         .bind(from_block_height)
         .fetch_all(&mut *tx)
@@ -199,22 +206,26 @@ impl BalanceDatabase {
 
         for row in deleted_rows {
             let wallet: String = row.get("wallet");
-            let ticker: String = row.get("ticker");
+            let contract_address: String = row.get("contract_address");
             // Restore the balance for the deleted row
-            if let Some(balance_row) = sqlx::query("SELECT block_height, amount FROM brc20_prog_historical_balances WHERE wallet = ? AND ticker = ? ORDER BY block_height DESC LIMIT 1")
+            if let Some(balance_row) = sqlx::query("SELECT block_height, amount, ticker, is_brc20 FROM brc20_prog_historical_balances WHERE wallet = ? AND contract_address = ? ORDER BY block_height DESC LIMIT 1")
                 .bind(wallet.clone())
-                .bind(ticker.clone())
+                .bind(contract_address.clone())
                 .fetch_optional(&mut *tx)
                 .await
                 .unwrap() {
                     let block_height: i64 = balance_row.get("block_height");
                     let amount: String = balance_row.get("amount");
+                    let ticker: String = balance_row.get("ticker");
+                    let is_brc20: bool = balance_row.get("is_brc20");
                     // Restore the balance for the deleted row
-                    sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height) VALUES (?, ?, ?, ?)")
+                    sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES (?, ?, ?, ?, ?, ?)")
                         .bind(wallet)
                         .bind(ticker)
                         .bind(amount)
                         .bind(block_height)
+                        .bind(contract_address)
+                        .bind(is_brc20)
                         .execute(&mut *tx)
                         .await
                         .unwrap();
@@ -243,10 +254,10 @@ mod tests {
 
         db.init().await;
 
-        db.update_balance(1, "wallet1".to_string(), "BRC20".to_string(), 100)
+        db.update_balance(1, "wallet1".to_string(), "BRC20".to_string(), "0x1234123412341234123412341234123412341234".to_string(), 100, true)
             .await;
         let balance = db
-            .get_balance("wallet1".to_string(), "BRC20".to_string())
+            .get_balance_of_contract("wallet1".to_string(), "0x1234123412341234123412341234123412341234".to_string())
             .await;
         assert_eq!(balance, Some(100));
 
@@ -256,7 +267,7 @@ mod tests {
 
         db.reorg(1).await;
         let balance_after_reorg = db
-            .get_balance("wallet1".to_string(), "BRC20".to_string())
+            .get_balance_of_contract("wallet1".to_string(), "0x1234123412341234123412341234123412341234".to_string())
             .await;
         assert_eq!(balance_after_reorg, None);
         let block_hash_after_reorg = db.get_block_hash(1).await;
