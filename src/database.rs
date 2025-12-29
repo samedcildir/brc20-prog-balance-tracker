@@ -1,5 +1,6 @@
 use rust_embed::Embed;
 use sqlx::{Row, Sqlite, SqlitePool, migrate::MigrateDatabase};
+use alloy_primitives::U256;
 
 #[derive(Embed)]
 #[folder = "sql"]
@@ -47,7 +48,7 @@ impl BalanceDatabase {
         sqlx::query(&reset_query).execute(&self.db).await.unwrap();
     }
 
-    pub async fn get_balance_of_contract(&self, wallet: String, contract_address: String) -> Option<u128> {
+    pub async fn get_balance_of_contract(&self, wallet: String, contract_address: String) -> Option<U256> {
         let row = sqlx::query(
             "SELECT amount FROM brc20_prog_current_balances WHERE wallet = ? AND contract_address = ?",
         )
@@ -56,7 +57,7 @@ impl BalanceDatabase {
         .fetch_optional(&self.db)
         .await
         .unwrap();
-        row.map(|r| r.get::<String, _>("amount").parse::<u128>().unwrap_or(0))
+        row.map(|r| r.get::<String, _>("amount").parse::<U256>().unwrap_or(U256::ZERO))
     }
 
     pub async fn update_balance(
@@ -65,7 +66,7 @@ impl BalanceDatabase {
         wallet: String,
         ticker: String,
         contract_address: String,
-        amount: u128,
+        amount: U256,
         is_brc20: bool,
     ) {
         let mut tx = self.db.begin().await.unwrap();
@@ -159,7 +160,7 @@ impl BalanceDatabase {
         self.reorg(self.get_last_block().await).await;
     }
 
-    pub async fn random_wallet_ticker_pairs(&self, count: i32) -> Vec<(String, String, u128)> {
+    pub async fn random_wallet_ticker_pairs(&self, count: i32) -> Vec<(String, String, U256)> {
         let rows = sqlx::query(
             "SELECT wallet, ticker, amount FROM brc20_prog_current_balances WHERE id IN (SELECT id FROM brc20_prog_current_balances ORDER BY RANDOM() LIMIT ?)",
         )
@@ -173,7 +174,7 @@ impl BalanceDatabase {
                     r.get("wallet"),
                     r.get("ticker"),
                     r.get::<String, _>("amount")
-                        .parse::<u128>()
+                        .parse::<U256>()
                         .expect("Failed to parse amount"),
                 )
             })
@@ -254,12 +255,12 @@ mod tests {
 
         db.init().await;
 
-        db.update_balance(1, "wallet1".to_string(), "BRC20".to_string(), "0x1234123412341234123412341234123412341234".to_string(), 100, true)
+        db.update_balance(1, "wallet1".to_string(), "BRC20".to_string(), "0x1234123412341234123412341234123412341234".to_string(), U256::from(100u64), true)
             .await;
         let balance = db
             .get_balance_of_contract("wallet1".to_string(), "0x1234123412341234123412341234123412341234".to_string())
             .await;
-        assert_eq!(balance, Some(100));
+        assert_eq!(balance, Some(U256::from(100u64)));
 
         db.set_block_hash(1, "hash1".to_string()).await;
         let block_hash = db.get_block_hash(1).await;

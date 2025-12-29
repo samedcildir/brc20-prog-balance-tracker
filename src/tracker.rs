@@ -1,6 +1,6 @@
 use std::{error::Error, str::FromStr};
 
-use alloy_primitives::{Address, Bytes, FixedBytes};
+use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use alloy_sol_macro::sol;
 use alloy_sol_types::{SolCall, SolEvent};
 use brc20_prog::{
@@ -204,7 +204,12 @@ impl BalanceTracker {
                         let to_address = address_from_topic(log.topics[2].bytes)
                             .to_string()
                             .to_lowercase();
-                        let amount = amount_from_data(log.data.bytes);
+                        let amount = if log.topics.len() > 3 {
+                            // this is for ERC-721 and ERC-1155 transfers, skip it
+                            continue;
+                        } else {
+                            amount_from_data(log.data.bytes)
+                        };
 
                         if amount == 0 {
                             continue;
@@ -217,7 +222,7 @@ impl BalanceTracker {
                                 .database
                                 .get_balance_of_contract(to_address.clone(), address_string.clone())
                                 .await
-                                .unwrap_or(0);
+                                .unwrap_or(U256::ZERO);
                             self.database
                                 .update_balance(
                                     next_block,
@@ -235,7 +240,7 @@ impl BalanceTracker {
                                 .database
                                 .get_balance_of_contract(from_address.clone(), address_string.clone())
                                 .await
-                                .unwrap_or(0);
+                                .unwrap_or(U256::ZERO);
                             self.database
                                 .update_balance(
                                     next_block,
@@ -258,13 +263,13 @@ impl BalanceTracker {
                                 .database
                                 .get_balance_of_contract(from_address.clone(), address_string.clone())
                                 .await
-                                .unwrap_or(0);
+                                .unwrap_or(U256::ZERO);
 
                             let to_balance = self
                                 .database
                                 .get_balance_of_contract(to_address.clone(), address_string.clone())
                                 .await
-                                .unwrap_or(0);
+                                .unwrap_or(U256::ZERO);
 
                             println!("From balance: {:?}", from_balance);
                             println!("To balance: {:?}", to_balance);
@@ -392,9 +397,9 @@ fn address_from_topic(bytes: FixedBytes<32>) -> Address {
     Address::from_slice(&bytes.as_slice()[12..32])
 }
 
-fn amount_from_data(bytes: Bytes) -> u128 {
-    let mut arr = [0u8; 16];
-    arr.copy_from_slice(&bytes.to_vec()[16..32]);
-    let amount = u128::from_be_bytes(arr);
+fn amount_from_data(bytes: Bytes) -> U256 {
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&bytes.to_vec()[0..32]);
+    let amount = U256::from_be_bytes(arr);
     amount
 }
