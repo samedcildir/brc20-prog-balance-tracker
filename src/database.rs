@@ -1,5 +1,5 @@
 use rust_embed::Embed;
-use sqlx::{Row, Sqlite, SqlitePool, migrate::MigrateDatabase};
+use sqlx::{Row, PgPool};
 use alloy_primitives::U256;
 
 #[derive(Embed)]
@@ -7,20 +7,14 @@ use alloy_primitives::U256;
 struct Sql;
 
 pub struct BalanceDatabase {
-    db: SqlitePool,
+    db: PgPool,
     first_block: i64,
 }
 
 impl BalanceDatabase {
     pub async fn new(db_url: &str, first_block: i64) -> Self {
-        if !Sqlite::database_exists(db_url).await.unwrap_or(false) {
-            match Sqlite::create_database(db_url).await {
-                Ok(_) => {}
-                Err(error) => panic!("error: {}", error),
-            }
-        }
         BalanceDatabase {
-            db: SqlitePool::connect(db_url).await.unwrap(),
+            db: PgPool::connect(db_url).await.unwrap(),
             first_block,
         }
     }
