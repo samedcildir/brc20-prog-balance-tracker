@@ -217,7 +217,7 @@ impl BalanceTracker {
 
                         if from_address == "0x0000000000000000000000000000000000000000" {
                             // Handle transfer from zero address (minting)
-                            println!("Mint of {} ${}, is brc20: {} to {}", amount, ticker_name, is_brc20, to_address);
+                            //println!("Mint of {} ${}, is brc20: {} to {}", amount, ticker_name, is_brc20, to_address);
                             let balance = self
                                 .database
                                 .get_balance_of_contract(to_address.clone(), address_string.clone())
@@ -235,7 +235,7 @@ impl BalanceTracker {
                                 .await;
                         } else if to_address == "0x0000000000000000000000000000000000000000" {
                             // Handle transfer to zero address (burning)
-                            println!("Burn of {} ${} from {}", amount, ticker_name, from_address);
+                            //println!("Burn of {} ${} from {}", amount, ticker_name, from_address);
                             let balance = self
                                 .database
                                 .get_balance_of_contract(from_address.clone(), address_string.clone())
@@ -252,12 +252,12 @@ impl BalanceTracker {
                                 )
                                 .await;
                         } else {
-                            println!(
+                            /*println!(
                                 "Transfer of {} ${} from {} to {}",
                                 amount, ticker_name, from_address, to_address
-                            );
+                            );*/
 
-                            println!("Transaction hash: {:?}", log.transaction_hash);
+                            //println!("Transaction hash: {:?}", log.transaction_hash);
 
                             let from_balance = self
                                 .database
@@ -271,8 +271,8 @@ impl BalanceTracker {
                                 .await
                                 .unwrap_or(U256::ZERO);
 
-                            println!("From balance: {:?}", from_balance);
-                            println!("To balance: {:?}", to_balance);
+                            //println!("From balance: {:?}", from_balance);
+                            //println!("To balance: {:?}", to_balance);
 
                             self.database
                                 .update_balance(
