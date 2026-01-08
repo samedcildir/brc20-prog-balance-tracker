@@ -64,7 +64,7 @@ impl BalanceDatabase {
         is_brc20: bool,
     ) {
         let mut tx = self.db.begin().await.unwrap();
-        sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = excluded.amount, block_height = excluded.block_height")
+        sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, $3::numeric, $4, $5, $6) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = excluded.amount, block_height = excluded.block_height")
             .bind(wallet.clone())
             .bind(ticker.clone())
             .bind(amount.to_string())
@@ -74,7 +74,7 @@ impl BalanceDatabase {
             .execute(&mut *tx)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO brc20_prog_historical_balances (block_height, wallet, ticker, amount, contract_address, is_brc20) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (wallet, contract_address, block_height) DO UPDATE SET amount = excluded.amount")
+        sqlx::query("INSERT INTO brc20_prog_historical_balances (block_height, wallet, ticker, amount, contract_address, is_brc20) VALUES ($1, $2, $3, $4::numeric, $5, $6) ON CONFLICT (wallet, contract_address, block_height) DO UPDATE SET amount = excluded.amount")
             .bind(block_height as i64)
             .bind(wallet)
             .bind(ticker)
