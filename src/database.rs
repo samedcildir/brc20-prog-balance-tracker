@@ -88,7 +88,7 @@ impl BalanceDatabase {
     }
 
     pub async fn add_ticker(&self, ticker: String, ticker_hash: Option<String>, contract_address: String, is_brc20: bool) {
-        sqlx::query("INSERT INTO brc20_prog_tickers (ticker, ticker_hash, contract_address, is_brc20) VALUES ($1, $2, $3, $4)")
+        sqlx::query("INSERT INTO brc20_prog_tickers (ticker, ticker_hash, contract_address, is_brc20) VALUES ($1, $2, $3, $4) ON CONFLICT (contract_address) DO UPDATE SET ticker = excluded.ticker, ticker_hash = excluded.ticker_hash, is_brc20 = excluded.is_brc20")
             .bind(ticker)
             .bind(ticker_hash)
             .bind(contract_address)
