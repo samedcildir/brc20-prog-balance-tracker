@@ -209,7 +209,7 @@ impl BalanceDatabase {
                 .fetch_optional(&mut *tx)
                 .await
                 .unwrap() {
-                    let block_height: i64 = balance_row.get("block_height");
+                    let block_height: i32 = balance_row.get("block_height");
                     let amount: String = balance_row.get("amount");
                     let ticker: String = balance_row.get("ticker");
                     let is_brc20: bool = balance_row.get("is_brc20");
