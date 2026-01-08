@@ -44,7 +44,7 @@ impl BalanceDatabase {
 
     pub async fn get_balance_of_contract(&self, wallet: String, contract_address: String) -> Option<U256> {
         let row = sqlx::query(
-            "SELECT amount FROM brc20_prog_current_balances WHERE wallet = ? AND contract_address = ?",
+            "SELECT amount FROM brc20_prog_current_balances WHERE wallet = $1 AND contract_address = $2",
         )
         .bind(wallet)
         .bind(contract_address)
@@ -64,7 +64,7 @@ impl BalanceDatabase {
         is_brc20: bool,
     ) {
         let mut tx = self.db.begin().await.unwrap();
-        sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = excluded.amount, block_height = excluded.block_height")
+        sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = excluded.amount, block_height = excluded.block_height")
             .bind(wallet.clone())
             .bind(ticker.clone())
             .bind(amount.to_string())
@@ -74,7 +74,7 @@ impl BalanceDatabase {
             .execute(&mut *tx)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO brc20_prog_historical_balances (block_height, wallet, ticker, amount, contract_address, is_brc20) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (wallet, contract_address, block_height) DO UPDATE SET amount = excluded.amount")
+        sqlx::query("INSERT INTO brc20_prog_historical_balances (block_height, wallet, ticker, amount, contract_address, is_brc20) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (wallet, contract_address, block_height) DO UPDATE SET amount = excluded.amount")
             .bind(block_height as i64)
             .bind(wallet)
             .bind(ticker)
@@ -88,7 +88,7 @@ impl BalanceDatabase {
     }
 
     pub async fn add_ticker(&self, ticker: String, ticker_hash: Option<String>, contract_address: String, is_brc20: bool) {
-        sqlx::query("INSERT INTO brc20_prog_tickers (ticker, ticker_hash, contract_address, is_brc20) VALUES (?, ?, ?, ?)")
+        sqlx::query("INSERT INTO brc20_prog_tickers (ticker, ticker_hash, contract_address, is_brc20) VALUES ($1, $2, $3, $4)")
             .bind(ticker)
             .bind(ticker_hash)
             .bind(contract_address)
@@ -99,7 +99,7 @@ impl BalanceDatabase {
     }
 
     pub async fn get_ticker_by_address(&self, contract_address: String) -> Option<(String, bool)> {
-        let row = sqlx::query("SELECT ticker, is_brc20 FROM brc20_prog_tickers WHERE contract_address = ?")
+        let row = sqlx::query("SELECT ticker, is_brc20 FROM brc20_prog_tickers WHERE contract_address = $1")
             .bind(contract_address)
             .fetch_optional(&self.db)
             .await
@@ -123,7 +123,7 @@ impl BalanceDatabase {
 
     pub async fn get_block_hash(&self, block_height: u64) -> Option<String> {
         let row =
-            sqlx::query("SELECT block_hash FROM brc20_prog_block_hashes WHERE block_height = ?")
+            sqlx::query("SELECT block_hash FROM brc20_prog_block_hashes WHERE block_height = $1")
                 .bind(block_height as i64)
                 .fetch_optional(&self.db)
                 .await
@@ -132,7 +132,7 @@ impl BalanceDatabase {
     }
 
     pub async fn set_block_hash(&self, block_height: u64, block_hash: String) {
-        sqlx::query("INSERT INTO brc20_prog_block_hashes (block_height, block_hash) VALUES (?, ?)")
+        sqlx::query("INSERT INTO brc20_prog_block_hashes (block_height, block_hash) VALUES ($1, $2)")
             .bind(block_height as i64)
             .bind(block_hash)
             .execute(&self.db)
@@ -156,7 +156,7 @@ impl BalanceDatabase {
 
     pub async fn random_wallet_ticker_pairs(&self, count: i32) -> Vec<(String, String, U256)> {
         let rows = sqlx::query(
-            "SELECT wallet, ticker, amount FROM brc20_prog_current_balances WHERE id IN (SELECT id FROM brc20_prog_current_balances ORDER BY RANDOM() LIMIT ?)",
+            "SELECT wallet, ticker, amount FROM brc20_prog_current_balances WHERE id IN (SELECT id FROM brc20_prog_current_balances ORDER BY RANDOM() LIMIT $1)",
         )
         .bind(count)
         .fetch_all(&self.db)
@@ -179,20 +179,20 @@ impl BalanceDatabase {
         let mut tx = self.db.begin().await.unwrap();
         let from_block_height = from_block_height as i64;
 
-        sqlx::query("DELETE FROM brc20_prog_block_hashes WHERE block_height > ?")
+        sqlx::query("DELETE FROM brc20_prog_block_hashes WHERE block_height > $1")
             .bind(from_block_height)
             .execute(&mut *tx)
             .await
             .unwrap();
 
-        sqlx::query("DELETE FROM brc20_prog_historical_balances WHERE block_height > ?")
+        sqlx::query("DELETE FROM brc20_prog_historical_balances WHERE block_height > $1")
             .bind(from_block_height)
             .execute(&mut *tx)
             .await
             .unwrap();
 
         let deleted_rows = sqlx::query(
-            "DELETE from brc20_prog_current_balances WHERE block_height > ? RETURNING wallet, contract_address",
+            "DELETE from brc20_prog_current_balances WHERE block_height > $1 RETURNING wallet, contract_address",
         )
         .bind(from_block_height)
         .fetch_all(&mut *tx)
@@ -203,7 +203,7 @@ impl BalanceDatabase {
             let wallet: String = row.get("wallet");
             let contract_address: String = row.get("contract_address");
             // Restore the balance for the deleted row
-            if let Some(balance_row) = sqlx::query("SELECT block_height, amount, ticker, is_brc20 FROM brc20_prog_historical_balances WHERE wallet = ? AND contract_address = ? ORDER BY block_height DESC LIMIT 1")
+            if let Some(balance_row) = sqlx::query("SELECT block_height, amount, ticker, is_brc20 FROM brc20_prog_historical_balances WHERE wallet = $1 AND contract_address = $2 ORDER BY block_height DESC LIMIT 1")
                 .bind(wallet.clone())
                 .bind(contract_address.clone())
                 .fetch_optional(&mut *tx)
@@ -214,7 +214,7 @@ impl BalanceDatabase {
                     let ticker: String = balance_row.get("ticker");
                     let is_brc20: bool = balance_row.get("is_brc20");
                     // Restore the balance for the deleted row
-                    sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES (?, ?, ?, ?, ?, ?)")
+                    sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, $3, $4, $5, $6)")
                         .bind(wallet)
                         .bind(ticker)
                         .bind(amount)
@@ -227,7 +227,7 @@ impl BalanceDatabase {
                 }
         }
 
-        sqlx::query("DELETE FROM brc20_prog_block_hashes WHERE block_height > ?")
+        sqlx::query("DELETE FROM brc20_prog_block_hashes WHERE block_height > $1")
             .bind(from_block_height)
             .execute(&mut *tx)
             .await
