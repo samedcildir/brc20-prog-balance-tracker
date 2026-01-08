@@ -28,9 +28,7 @@ sol! {
     /**
      * @dev Returns the balance of a specific account.
      */
-    function balanceOf(bytes calldata ticker, address account) public view virtual returns (uint256) {
-        return _brc20s[ticker].balanceOf(account);
-    }
+    function balanceOf(address account) public view virtual returns (uint256);
 
     /**
      * @dev Returns the name of the token.
@@ -328,20 +326,19 @@ impl BalanceTracker {
         let current_block = self.client.eth_block_number().await?;
         let mut count = 1;
         let total = 1000;
-        let pairs = self.database.random_wallet_ticker_pairs(total).await;
-        let controller_address: Address = CONTROLLER_ADDR.parse().unwrap();
-        for (wallet, ticker, amount) in pairs {
+        let pairs = self.database.random_wallet_contract_address_pairs(total).await;
+        for (wallet, contract_address, amount) in pairs {
             if count % (total / 10) == 0 {
                 println!("Testing {}/{}", count, total);
             }
-            let ticker_bytes = ticker.clone().into_bytes();
+            let contract_address: Address = contract_address.parse().unwrap();
             let call = EthCall {
                 from: Some(Address::ZERO.into()),
-                to: Some(controller_address.into()),
+                to: Some(contract_address.into()),
                 data: Some(RawBytes::new(format!(
                     "0x{}",
                     hex::encode(
-                        balanceOfCall::new((Bytes::from(ticker_bytes), wallet.parse().unwrap()))
+                        balanceOfCall::new((wallet.parse().unwrap(),))
                             .abi_encode()
                     )
                 ))),
@@ -354,8 +351,8 @@ impl BalanceTracker {
             );
             if module_balance != amount {
                 println!(
-                    "Mismatch for wallet {} ticker {}: db {} on-chain {}",
-                    wallet, ticker, amount, module_balance
+                    "Mismatch for wallet {} contract address {}: db {} on-chain {}",
+                    wallet, contract_address, amount, module_balance
                 );
                 let mut next_block = self.client.eth_block_number().await?;
                 let mut indexed_block = self.database.get_last_block().await;

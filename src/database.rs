@@ -220,9 +220,9 @@ impl BalanceDatabase {
         self.reorg(self.get_last_block().await).await;
     }
 
-    pub async fn random_wallet_ticker_pairs(&self, count: i32) -> Vec<(String, String, U256)> {
+    pub async fn random_wallet_contract_address_pairs(&self, count: i32) -> Vec<(String, String, U256)> {
         let rows = sqlx::query(
-            "SELECT wallet, ticker, amount::text FROM brc20_prog_current_balances WHERE id IN (SELECT id FROM brc20_prog_current_balances ORDER BY RANDOM() LIMIT $1)",
+            "SELECT wallet, contract_address, amount::text FROM brc20_prog_current_balances WHERE id IN (SELECT id FROM brc20_prog_current_balances ORDER BY RANDOM() LIMIT $1)",
         )
         .bind(count)
         .fetch_all(&self.db)
@@ -232,7 +232,7 @@ impl BalanceDatabase {
             .map(|r| {
                 (
                     r.get("wallet"),
-                    r.get("ticker"),
+                    r.get("contract_address"),
                     r.get::<String, _>("amount")
                         .parse::<U256>()
                         .expect("Failed to parse amount"),
