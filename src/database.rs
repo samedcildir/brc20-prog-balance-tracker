@@ -54,7 +54,7 @@ impl BalanceDatabase {
         is_brc20: bool,
     ) {
         let mut tx = self.db.begin().await.unwrap();
-        let r = sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, $3::numeric, $4, $5, $6) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = amount + excluded.amount, block_height = excluded.block_height RETURNING amount::text")
+        let r = sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, $3::numeric, $4, $5, $6) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = amount + excluded.amount, block_height = excluded.block_height RETURNING brc20_prog_current_balances.amount::text")
             .bind(wallet.clone())
             .bind(ticker.clone())
             .bind(amount.to_string())
@@ -88,7 +88,7 @@ impl BalanceDatabase {
         is_brc20: bool,
     ) {
         let mut tx = self.db.begin().await.unwrap();
-        let r = sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, -1 * $3::numeric, $4, $5, $6) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = amount + excluded.amount, block_height = excluded.block_height RETURNING amount::text")
+        let r = sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, -1 * $3::numeric, $4, $5, $6) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = amount + excluded.amount, block_height = excluded.block_height RETURNING brc20_prog_current_balances.amount::text")
             .bind(wallet.clone())
             .bind(ticker.clone())
             .bind(amount.to_string())
