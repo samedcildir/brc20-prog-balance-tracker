@@ -149,6 +149,7 @@ impl BalanceTracker {
                     .then(a.log_index.cmp(&b.log_index))
             });
 
+            self.database.begin_transaction().await;
             for log in logs {
                 let address_string = log.address.address.to_string().to_lowercase();
                 if address_string == CONTROLLER_ADDR {
@@ -287,6 +288,8 @@ impl BalanceTracker {
                     }
                 }
             }
+
+            self.database.commit_transaction().await;
 
             self.database
                 .set_block_hash(next_block.try_into().unwrap(), prog_block.hash.bytes.to_string())
