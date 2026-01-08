@@ -44,7 +44,7 @@ impl BalanceDatabase {
 
     pub async fn get_balance_of_contract(&self, wallet: String, contract_address: String) -> Option<U256> {
         let row = sqlx::query(
-            "SELECT amount FROM brc20_prog_current_balances WHERE wallet = $1 AND contract_address = $2",
+            "SELECT amount::text FROM brc20_prog_current_balances WHERE wallet = $1 AND contract_address = $2",
         )
         .bind(wallet)
         .bind(contract_address)
@@ -156,7 +156,7 @@ impl BalanceDatabase {
 
     pub async fn random_wallet_ticker_pairs(&self, count: i32) -> Vec<(String, String, U256)> {
         let rows = sqlx::query(
-            "SELECT wallet, ticker, amount FROM brc20_prog_current_balances WHERE id IN (SELECT id FROM brc20_prog_current_balances ORDER BY RANDOM() LIMIT $1)",
+            "SELECT wallet, ticker, amount::text FROM brc20_prog_current_balances WHERE id IN (SELECT id FROM brc20_prog_current_balances ORDER BY RANDOM() LIMIT $1)",
         )
         .bind(count)
         .fetch_all(&self.db)
@@ -203,7 +203,7 @@ impl BalanceDatabase {
             let wallet: String = row.get("wallet");
             let contract_address: String = row.get("contract_address");
             // Restore the balance for the deleted row
-            if let Some(balance_row) = sqlx::query("SELECT block_height, amount, ticker, is_brc20 FROM brc20_prog_historical_balances WHERE wallet = $1 AND contract_address = $2 ORDER BY block_height DESC LIMIT 1")
+            if let Some(balance_row) = sqlx::query("SELECT block_height, amount::text, ticker, is_brc20 FROM brc20_prog_historical_balances WHERE wallet = $1 AND contract_address = $2 ORDER BY block_height DESC LIMIT 1")
                 .bind(wallet.clone())
                 .bind(contract_address.clone())
                 .fetch_optional(&mut *tx)
@@ -214,7 +214,7 @@ impl BalanceDatabase {
                     let ticker: String = balance_row.get("ticker");
                     let is_brc20: bool = balance_row.get("is_brc20");
                     // Restore the balance for the deleted row
-                    sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, $3, $4, $5, $6)")
+                    sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount::text, block_height, contract_address, is_brc20) VALUES ($1, $2, $3, $4, $5, $6)")
                         .bind(wallet)
                         .bind(ticker)
                         .bind(amount)
