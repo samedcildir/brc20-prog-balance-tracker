@@ -8,11 +8,11 @@ struct Sql;
 
 pub struct BalanceDatabase {
     db: PgPool,
-    first_block: i64,
+    first_block: i32,
 }
 
 impl BalanceDatabase {
-    pub async fn new(db_url: &str, first_block: i64) -> Self {
+    pub async fn new(db_url: &str, first_block: i32) -> Self {
         BalanceDatabase {
             db: PgPool::connect(db_url).await.unwrap(),
             first_block,
@@ -107,41 +107,41 @@ impl BalanceDatabase {
         row.map(|r| (r.get::<String, _>("ticker"), r.get::<bool, _>("is_brc20")))
     }
 
-    pub async fn get_last_block(&self) -> u64 {
+    pub async fn get_last_block(&self) -> u32 {
         let row =
             sqlx::query("SELECT MAX(block_height) as max_height FROM brc20_prog_block_hashes")
                 .fetch_one(&self.db)
                 .await
                 .unwrap();
-        (row.get::<Option<i64>, _>("max_height")
-            .unwrap_or(self.first_block - 1)) as u64
+        (row.get::<Option<i32>, _>("max_height")
+            .unwrap_or(self.first_block - 1)) as u32
     }
 
-    pub async fn get_next_block(&self) -> u64 {
+    pub async fn get_next_block(&self) -> u32 {
         self.get_last_block().await + 1
     }
 
-    pub async fn get_block_hash(&self, block_height: u64) -> Option<String> {
+    pub async fn get_block_hash(&self, block_height: u32) -> Option<String> {
         let row =
             sqlx::query("SELECT block_hash FROM brc20_prog_block_hashes WHERE block_height = $1")
-                .bind(block_height as i64)
+                .bind(block_height as i32)
                 .fetch_optional(&self.db)
                 .await
                 .unwrap();
         row.map(|r| r.get::<String, _>("block_hash"))
     }
 
-    pub async fn set_block_hash(&self, block_height: u64, block_hash: String) {
+    pub async fn set_block_hash(&self, block_height: u32, block_hash: String) {
         sqlx::query("INSERT INTO brc20_prog_block_hashes (block_height, block_hash) VALUES ($1, $2)")
-            .bind(block_height as i64)
+            .bind(block_height as i32)
             .bind(block_hash)
             .execute(&self.db)
             .await
             .unwrap();
     }
 
-    pub async fn validate_block_hash(&self, block_height: u64, block_hash: String) -> bool {
-        if block_height < self.first_block as u64 {
+    pub async fn validate_block_hash(&self, block_height: u32, block_hash: String) -> bool {
+        if block_height < self.first_block as u32 {
             return true;
         }
         let stored_hash = self.get_block_hash(block_height).await;
@@ -175,9 +175,9 @@ impl BalanceDatabase {
             .collect()
     }
 
-    pub async fn reorg(&self, from_block_height: u64) {
+    pub async fn reorg(&self, from_block_height: u32) {
         let mut tx = self.db.begin().await.unwrap();
-        let from_block_height = from_block_height as i64;
+        let from_block_height = from_block_height as i32;
 
         sqlx::query("DELETE FROM brc20_prog_block_hashes WHERE block_height > $1")
             .bind(from_block_height)

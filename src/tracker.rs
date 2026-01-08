@@ -97,7 +97,7 @@ impl BalanceTracker {
                 }
             };
 
-            let next_block = self.database.get_next_block().await;
+            let next_block: u64 = self.database.get_next_block().await.into();
             println!("Processing block {}", next_block);
 
             let Ok(prog_block) = self
@@ -303,7 +303,7 @@ impl BalanceTracker {
             }
 
             self.database
-                .set_block_hash(next_block, prog_block.hash.bytes.to_string())
+                .set_block_hash(next_block.try_into().unwrap(), prog_block.hash.bytes.to_string())
                 .await;
         }
     }
@@ -374,7 +374,7 @@ impl BalanceTracker {
                     return Err("Balance mismatch".into());
                 }
                 println!("Received new block during the test, waiting for database to catch up...");
-                while u64::from_str_radix(&next_block.trim_start_matches("0x"), 16).unwrap()
+                while u32::from_str_radix(&next_block.trim_start_matches("0x"), 16).unwrap()
                     != indexed_block
                 {
                     println!(

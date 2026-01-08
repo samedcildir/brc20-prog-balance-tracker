@@ -36,7 +36,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_brc20_prog_current_balances_wallet_contrac
 
 --- Block hashes ---
 
-CREATE TABLE IF NOT EXISTS brc20_prog_block_hashes (id INTEGER PRIMARY KEY, block_height INTEGER NOT NULL, block_hash TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS brc20_prog_block_hashes (id serial8 PRIMARY KEY, block_height int4 NOT NULL, block_hash TEXT NOT NULL);
 
 CREATE INDEX IF NOT EXISTS idx_brc20_prog_block_hashes_block_height ON brc20_prog_block_hashes (block_height);
 
