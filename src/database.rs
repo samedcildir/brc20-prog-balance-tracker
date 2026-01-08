@@ -44,19 +44,7 @@ impl BalanceDatabase {
         sqlx::query(&reset_query).execute(&self.db).await.unwrap();
     }
 
-    pub async fn get_balance_of_contract(&self, wallet: String, contract_address: String) -> Option<U256> {
-        let row = sqlx::query(
-            "SELECT amount::text FROM brc20_prog_current_balances WHERE wallet = $1 AND contract_address = $2",
-        )
-        .bind(wallet)
-        .bind(contract_address)
-        .fetch_optional(&self.db)
-        .await
-        .unwrap();
-        row.map(|r| r.get::<String, _>("amount").parse::<U256>().unwrap_or(U256::ZERO))
-    }
-
-    pub async fn update_balance(
+    pub async fn add_balance(
         &self,
         block_height: u64,
         wallet: String,
@@ -66,21 +54,59 @@ impl BalanceDatabase {
         is_brc20: bool,
     ) {
         let mut tx = self.db.begin().await.unwrap();
-        sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, $3::numeric, $4, $5, $6) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = excluded.amount, block_height = excluded.block_height")
+        let r = sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, $3::numeric, $4, $5, $6) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = amount + excluded.amount, block_height = excluded.block_height RETURNING amount::text")
             .bind(wallet.clone())
             .bind(ticker.clone())
             .bind(amount.to_string())
             .bind(block_height as i64)
             .bind(contract_address.clone())
             .bind(is_brc20)
-            .execute(&mut *tx)
+            .fetch_one(&mut *tx)
             .await
             .unwrap();
+        let new_amount: String = r.get("amount");
         sqlx::query("INSERT INTO brc20_prog_historical_balances (block_height, wallet, ticker, amount, contract_address, is_brc20) VALUES ($1, $2, $3, $4::numeric, $5, $6) ON CONFLICT (wallet, contract_address, block_height) DO UPDATE SET amount = excluded.amount")
             .bind(block_height as i64)
             .bind(wallet)
             .bind(ticker)
+            .bind(new_amount)
+            .bind(contract_address)
+            .bind(is_brc20)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    pub async fn remove_balance(
+        &self,
+        block_height: u64,
+        wallet: String,
+        ticker: String,
+        contract_address: String,
+        amount: U256,
+        is_brc20: bool,
+    ) {
+        let mut tx = self.db.begin().await.unwrap();
+        let r = sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, -1 * $3::numeric, $4, $5, $6) ON CONFLICT (wallet, contract_address) DO UPDATE SET amount = amount + excluded.amount, block_height = excluded.block_height RETURNING amount::text")
+            .bind(wallet.clone())
+            .bind(ticker.clone())
             .bind(amount.to_string())
+            .bind(block_height as i64)
+            .bind(contract_address.clone())
+            .bind(is_brc20)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        let new_amount: String = r.get("amount");
+        if new_amount.starts_with("-") {
+            panic!("Insufficient balance for wallet {} on contract {}", wallet, contract_address);
+        }
+        sqlx::query("INSERT INTO brc20_prog_historical_balances (block_height, wallet, ticker, amount, contract_address, is_brc20) VALUES ($1, $2, $3, $4::numeric, $5, $6) ON CONFLICT (wallet, contract_address, block_height) DO UPDATE SET amount = excluded.amount")
+            .bind(block_height as i64)
+            .bind(wallet)
+            .bind(ticker)
+            .bind(new_amount)
             .bind(contract_address)
             .bind(is_brc20)
             .execute(&mut *tx)

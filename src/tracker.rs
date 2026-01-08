@@ -48,6 +48,7 @@ pub enum TestStatus {
 pub struct BalanceTracker {
     database: BalanceDatabase,
     client: HttpClient,
+    ticker_cache: std::collections::HashMap<String, TickerInfo>,
 }
 
 pub struct TickerInfo {
@@ -56,13 +57,18 @@ pub struct TickerInfo {
 
 impl BalanceTracker {
     pub fn new(database: BalanceDatabase, client: HttpClient) -> Self {
-        BalanceTracker { database, client }
+        BalanceTracker { database, client, ticker_cache: std::collections::HashMap::new() }
     }
 
     pub async fn get_ticker_info_by_address(
-        &self,
+        &mut self,
         address: String,
     ) -> Option<TickerInfo> {
+        if let Some(cached) = self.ticker_cache.get(&address) {
+            return Some(TickerInfo {
+                ticker: cached.ticker.clone(),
+            });
+        }
         let call = EthCall {
             from: Some(Address::ZERO.into()),
             to: Some(Address::from_str(&address).unwrap().into()),
@@ -78,6 +84,13 @@ impl BalanceTracker {
                 .as_slice(),
         )
         .ok()?;
+
+        self.ticker_cache.insert(
+            address.clone(),
+            TickerInfo {
+                ticker: ticker_name.clone(),
+            },
+        );
 
         Some(TickerInfo {
             ticker: ticker_name,
@@ -218,36 +231,26 @@ impl BalanceTracker {
                         if from_address == "0x0000000000000000000000000000000000000000" {
                             // Handle transfer from zero address (minting)
                             //println!("Mint of {} ${}, is brc20: {} to {}", amount, ticker_name, is_brc20, to_address);
-                            let balance = self
-                                .database
-                                .get_balance_of_contract(to_address.clone(), address_string.clone())
-                                .await
-                                .unwrap_or(U256::ZERO);
                             self.database
-                                .update_balance(
+                                .add_balance(
                                     next_block,
                                     to_address,
                                     ticker_name,
                                     address_string,
-                                    balance.checked_add(amount).expect("Overflow"),
+                                    amount,
                                     is_brc20,
                                 )
                                 .await;
                         } else if to_address == "0x0000000000000000000000000000000000000000" {
                             // Handle transfer to zero address (burning)
                             //println!("Burn of {} ${} from {}", amount, ticker_name, from_address);
-                            let balance = self
-                                .database
-                                .get_balance_of_contract(from_address.clone(), address_string.clone())
-                                .await
-                                .unwrap_or(U256::ZERO);
                             self.database
-                                .update_balance(
+                                .remove_balance(
                                     next_block,
                                     from_address,
                                     ticker_name,
                                     address_string,
-                                    balance.checked_sub(amount).expect("Insufficient balance"),
+                                    amount,
                                     is_brc20,
                                 )
                                 .await;
@@ -259,41 +262,24 @@ impl BalanceTracker {
 
                             //println!("Transaction hash: {:?}", log.transaction_hash);
 
-                            let from_balance = self
-                                .database
-                                .get_balance_of_contract(from_address.clone(), address_string.clone())
-                                .await
-                                .unwrap_or(U256::ZERO);
-
-                            let to_balance = self
-                                .database
-                                .get_balance_of_contract(to_address.clone(), address_string.clone())
-                                .await
-                                .unwrap_or(U256::ZERO);
-
-                            //println!("From balance: {:?}", from_balance);
-                            //println!("To balance: {:?}", to_balance);
-
                             self.database
-                                .update_balance(
+                                .remove_balance(
                                     next_block,
                                     from_address,
                                     ticker_name.clone(),
                                     address_string.clone(),
-                                    from_balance
-                                        .checked_sub(amount)
-                                        .expect("Insufficient balance"),
+                                    amount,
                                     is_brc20,
                                 )
                                 .await;
 
                             self.database
-                                .update_balance(
+                                .add_balance(
                                     next_block,
                                     to_address,
                                     ticker_name.clone(),
                                     address_string.clone(),
-                                    to_balance.checked_add(amount).expect("Overflow"),
+                                    amount,
                                     is_brc20,
                                 )
                                 .await;
