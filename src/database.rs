@@ -214,7 +214,7 @@ impl BalanceDatabase {
                     let ticker: String = balance_row.get("ticker");
                     let is_brc20: bool = balance_row.get("is_brc20");
                     // Restore the balance for the deleted row
-                    sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount::text, block_height, contract_address, is_brc20) VALUES ($1, $2, $3, $4, $5, $6)")
+                    sqlx::query("INSERT INTO brc20_prog_current_balances (wallet, ticker, amount, block_height, contract_address, is_brc20) VALUES ($1, $2, $3::numeric, $4, $5, $6)")
                         .bind(wallet)
                         .bind(ticker)
                         .bind(amount)
