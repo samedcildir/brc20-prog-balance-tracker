@@ -27,7 +27,7 @@ impl BalanceDatabase {
                 .to_vec(),
         )
         .expect("Failed to read init.sql");
-        sqlx::query(&init_query).execute(&self.db).await.unwrap();
+        sqlx::raw_sql(&init_query).execute(&self.db).await.unwrap();
     }
 
     pub async fn reset(&self) {
