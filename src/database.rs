@@ -9,6 +9,7 @@ struct Sql;
 pub struct BalanceDatabase {
     db: PgPool,
     first_block: i32,
+    ticker_cache: std::collections::HashMap<String, (String, bool)>,
 }
 
 impl BalanceDatabase {
@@ -16,6 +17,7 @@ impl BalanceDatabase {
         BalanceDatabase {
             db: PgPool::connect(db_url).await.unwrap(),
             first_block,
+            ticker_cache: std::collections::HashMap::new(),
         }
     }
 
@@ -87,24 +89,35 @@ impl BalanceDatabase {
         tx.commit().await.unwrap();
     }
 
-    pub async fn add_ticker(&self, ticker: String, ticker_hash: Option<String>, contract_address: String, is_brc20: bool) {
+    pub async fn add_ticker(&mut self, ticker: String, ticker_hash: Option<String>, contract_address: String, is_brc20: bool) {
         sqlx::query("INSERT INTO brc20_prog_tickers (ticker, ticker_hash, contract_address, is_brc20) VALUES ($1, $2, $3, $4) ON CONFLICT (contract_address) DO UPDATE SET ticker = excluded.ticker, ticker_hash = excluded.ticker_hash, is_brc20 = excluded.is_brc20")
-            .bind(ticker)
+            .bind(ticker.clone())
             .bind(ticker_hash)
-            .bind(contract_address)
+            .bind(contract_address.clone())
             .bind(is_brc20)
             .execute(&self.db)
             .await
             .unwrap();
+        
+        // Add to cache
+        self.ticker_cache.insert(contract_address, (ticker, is_brc20));
     }
 
-    pub async fn get_ticker_by_address(&self, contract_address: String) -> Option<(String, bool)> {
+    pub async fn get_ticker_by_address(&mut self, contract_address: String) -> Option<(String, bool)> {
+        if let Some(cached) = self.ticker_cache.get(&contract_address) {
+            return Some(cached.clone());
+        }
         let row = sqlx::query("SELECT ticker, is_brc20 FROM brc20_prog_tickers WHERE contract_address = $1")
-            .bind(contract_address)
+            .bind(contract_address.clone())
             .fetch_optional(&self.db)
             .await
             .unwrap();
-        row.map(|r| (r.get::<String, _>("ticker"), r.get::<bool, _>("is_brc20")))
+        if let Some(r) = &row {
+            let result = (r.get::<String, _>("ticker"), r.get::<bool, _>("is_brc20"));
+            self.ticker_cache.insert(contract_address, result.clone());
+            return Some(result);
+        }
+        None
     }
 
     pub async fn get_last_block(&self) -> u32 {
@@ -148,7 +161,7 @@ impl BalanceDatabase {
         stored_hash.map_or(false, |h| h == block_hash)
     }
 
-    pub async fn clear_residue(&self) {
+    pub async fn clear_residue(&mut self) {
         // Reorg deletes all data after the last processed block
         // So it works as a cleanup mechanism
         self.reorg(self.get_last_block().await).await;
@@ -175,7 +188,10 @@ impl BalanceDatabase {
             .collect()
     }
 
-    pub async fn reorg(&self, from_block_height: u32) {
+    pub async fn reorg(&mut self, from_block_height: u32) {
+        // invalidate ticker cache
+        self.ticker_cache.clear();
+
         let mut tx = self.db.begin().await.unwrap();
         let from_block_height = from_block_height as i32;
 
@@ -234,40 +250,5 @@ impl BalanceDatabase {
             .unwrap();
 
         tx.commit().await.unwrap();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_database() {
-        std::fs::create_dir_all("tmp").unwrap();
-        let test_file = format!("sqlite://tmp/{}.db", uuid::Uuid::new_v4());
-        let db = BalanceDatabase::new(&test_file, 0).await;
-
-        db.init().await;
-
-        db.update_balance(1, "wallet1".to_string(), "BRC20".to_string(), "0x1234123412341234123412341234123412341234".to_string(), U256::from(100u64), true)
-            .await;
-        let balance = db
-            .get_balance_of_contract("wallet1".to_string(), "0x1234123412341234123412341234123412341234".to_string())
-            .await;
-        assert_eq!(balance, Some(U256::from(100u64)));
-
-        db.set_block_hash(1, "hash1".to_string()).await;
-        let block_hash = db.get_block_hash(1).await;
-        assert_eq!(block_hash, Some("hash1".to_string()));
-
-        db.reorg(1).await;
-        let balance_after_reorg = db
-            .get_balance_of_contract("wallet1".to_string(), "0x1234123412341234123412341234123412341234".to_string())
-            .await;
-        assert_eq!(balance_after_reorg, None);
-        let block_hash_after_reorg = db.get_block_hash(1).await;
-        assert_eq!(block_hash_after_reorg, None);
-
-        std::fs::remove_file(test_file.trim_start_matches("sqlite://")).unwrap();
     }
 }

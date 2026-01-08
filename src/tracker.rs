@@ -84,7 +84,7 @@ impl BalanceTracker {
         })
     }
 
-    pub async fn run(&self) {
+    pub async fn run(&mut self) {
         self.database.init().await;
         self.database.clear_residue().await;
         loop {
@@ -309,7 +309,7 @@ impl BalanceTracker {
     }
 
     /// Returns the last confirmed block
-    pub async fn check_reorg(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn check_reorg(&mut self) -> Result<(), Box<dyn Error>> {
         let last_block = self.database.get_last_block().await;
         for i in 0..10 {
             let block_number = last_block - i;

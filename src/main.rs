@@ -60,7 +60,7 @@ async fn main() {
         return;
     }
 
-    let tracker = BalanceTracker::new(
+    let mut tracker = BalanceTracker::new(
         BalanceDatabase::new(&env.db_url, first_block).await,
         HttpClientBuilder::new()
             .set_headers({
