@@ -83,7 +83,11 @@ async fn main() {
 
     if std::env::args().any(|arg| arg == "--test") {
         loop {
-            match tracker.test().await.expect("Test failed") {
+            // check if --test has a number argument
+            let test_arg = std::env::args().skip_while(|arg| arg != "--test").nth(1);
+            let test_total = test_arg.and_then(|arg| arg.parse::<i32>().ok()).unwrap_or(1000);
+
+            match tracker.test(test_total).await.expect("Test failed") {
                 TestStatus::Passed => {
                     println!("All tests passed!");
                     break;

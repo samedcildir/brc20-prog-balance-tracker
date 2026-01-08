@@ -322,10 +322,9 @@ impl BalanceTracker {
         panic!("Reorg too deep, cannot recover");
     }
 
-    pub async fn test(&self) -> Result<TestStatus, Box<dyn Error>> {
+    pub async fn test(&self, total: i32) -> Result<TestStatus, Box<dyn Error>> {
         let current_block = self.client.eth_block_number().await?;
         let mut count = 1;
-        let total = 1000;
         let pairs = self.database.random_wallet_contract_address_pairs(total).await;
         for (wallet, contract_address, amount) in pairs {
             if count % (total / 10) == 0 {
