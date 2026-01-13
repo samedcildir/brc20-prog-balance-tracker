@@ -141,6 +141,13 @@ impl BalanceTracker {
                 continue;
             };
 
+            if logs.is_empty() && !prog_block.logs_bloom.bytes.iter().all(|&b| b == 0) {
+                // there are logs in this block according to the bloom filter, but we didn't get any
+                println!("Logs bloom filter indicates logs are present, but none were fetched. Retrying...");
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                continue;
+            }
+
             logs.sort_by(|a, b| {
                 a.transaction_index
                     .cmp(&b.transaction_index)
@@ -320,6 +327,17 @@ impl BalanceTracker {
             }
         }
         panic!("Reorg too deep, cannot recover");
+    }
+
+    pub async fn handle_reorg(&mut self, reorg_height: i32) -> Result<(), Box<dyn Error>> {
+        let last_block = self.database.get_last_block().await;
+        if reorg_height >= last_block as i32 {
+            println!("No reorg needed, database is already at or below height {}", reorg_height);
+            return Ok(());
+        }
+        println!("Handling reorg to height {}", reorg_height);
+        self.database.reorg(reorg_height as u32).await;
+        Ok(())
     }
 
     pub async fn test(&self, total: i32) -> Result<TestStatus, Box<dyn Error>> {

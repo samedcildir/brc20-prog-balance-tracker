@@ -102,5 +102,13 @@ async fn main() {
         }
     }
 
+    if std::env::args().any(|arg| arg == "--reorg") {
+        let reorg_arg = std::env::args().skip_while(|arg| arg != "--reorg").nth(1);
+        let reorg_height = reorg_arg.and_then(|arg| arg.parse::<i32>().ok()).unwrap();
+        tracker.handle_reorg(reorg_height).await.expect("Reorg handling failed");
+        println!("Reorg handling complete up to height {}", reorg_height);
+        return;
+    }
+
     tracker.run().await;
 }
